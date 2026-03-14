@@ -6,6 +6,10 @@ Final Project/
 # Results — track summaries and figures, ignore large checkpoints
 results/checkpoints/
 results/**/*.pt
+results/runs
+results/figures/mert_330m_training_curves.png
+# Personal notes / reading notes
+notes/
 
 # IDE / editor
 .vscode/

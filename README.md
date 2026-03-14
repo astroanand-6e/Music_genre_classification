@@ -23,7 +23,10 @@ CS5100_FAI/
 │   ├── progress_report.ipynb   # Living progress report (auto-loads results)
 │   └── baseline.ipynb          # Original MERT baseline notebook
 │
-└── results/                    # (gitignored) checkpoints, runs, figures, reports
+└── results/
+    ├── runs/                   # JSON summaries of every experiment
+    ├── figures/                # Training curves, confusion matrices, F1 charts
+    └── checkpoints/            # (gitignored) model checkpoint .pt files
 ```
 
 ## Dataset
@@ -93,9 +96,39 @@ seaborn
 tqdm
 ```
 
-## Results (Initial)
+## Results
 
-| Model | Mode | Accuracy |
-|-------|------|----------|
-| MERT-v1-95M | Zero-shot linear probe | 58.41% |
-| MERT-v1-330M | Zero-shot linear probe | 62.41% |
+### Overall Accuracy
+
+| Model | Zero-shot | Fine-tuned (head-only) | Fine-tuned (end-to-end) |
+|-------|:---------:|:----------------------:|:-----------------------:|
+| MERT-v1-95M | 58.41% | 57.54% | 63.12% |
+| MERT-v1-330M | 62.41% | — | **66.06%** ← best |
+| CLAP (LAION) | 12.50% | — | 63.75% |
+| AST | 55.25% | — | 64.94% |
+
+> MERT head-only fine-tune trained the classification head with the encoder frozen (100 epochs). End-to-end fine-tune updated all parameters jointly.
+
+### Per-class F1 (Fine-tuned, end-to-end)
+
+| Genre | MERT-330M | AST | CLAP LAION | MERT-95M (head-only) |
+|-------|:---------:|:---:|:----------:|:--------------------:|
+| Electronic | **0.722** | 0.677 | 0.641 | 0.590 |
+| Experimental | 0.563 | 0.546 | **0.571** | 0.507 |
+| Folk | 0.672 | **0.711** | 0.657 | 0.644 |
+| Hip-Hop | **0.802** | 0.765 | 0.750 | 0.690 |
+| Instrumental | 0.611 | **0.637** | 0.623 | 0.595 |
+| International | **0.801** | 0.774 | 0.752 | 0.587 |
+| Pop | **0.451** | 0.430 | 0.437 | 0.302 |
+| Rock | **0.667** | 0.633 | 0.659 | 0.638 |
+
+### Key Observations
+
+- **MERT-330M fine-tuned (66.06%)** is the best result overall — music-domain pre-training at scale wins both zero-shot and fine-tuned settings.
+- **AST** (64.94%) and **CLAP LAION** (63.75%) are competitive after fine-tuning despite very different pre-training objectives.
+- **CLAP LAION** shows the largest gain (+51.3 pp) from its near-random zero-shot — its audio encoder requires supervised fine-tuning to be useful for closed-set classification.
+- **MERT-95M head-only** (57.54%) actually dropped below zero-shot (58.41%), confirming frozen MERT representations are best used with a simple logistic regression probe, not a trained MLP head.
+- **Pop** is the hardest genre for all models (F1 ≤ 0.45), due to high acoustic overlap with other genres.
+- **Experimental** is consistently the second-hardest (F1 ≈ 0.51–0.57), consistent with its loose genre definition.
+
+Full run JSONs are in `results/runs/` and figures in `results/figures/` and `results/evaluations/`.
