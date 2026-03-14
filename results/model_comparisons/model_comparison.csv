@@ -1,0 +1,4 @@
+Model,Accuracy,Test Samples
+MERT-v1-95M,58.41%,1599
+MERT-v1-330M,62.41%,1599
+CLAP,12.51%,1599

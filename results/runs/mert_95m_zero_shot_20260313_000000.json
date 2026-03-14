@@ -1,0 +1,14 @@
+{
+  "model": "mert",
+  "variant": "95m",
+  "mode": "zero_shot",
+  "timestamp": "2026-03-13T00:56:00",
+  "test_accuracy": 0.5841,
+  "best_val_accuracy": null,
+  "config": {
+    "clip_secs": 10,
+    "target_sr": 24000
+  },
+  "per_class_f1": {},
+  "note": "seeded from pre-restructure run"
+}

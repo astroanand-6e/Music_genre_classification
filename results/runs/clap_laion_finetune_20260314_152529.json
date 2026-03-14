@@ -1,0 +1,27 @@
+{
+  "model": "clap",
+  "variant": "laion",
+  "mode": "finetune",
+  "timestamp": "2026-03-14T15:25:29.829051",
+  "test_accuracy": 0.6375,
+  "best_val_accuracy": 0.6414,
+  "config": {
+    "clip_secs": 10,
+    "target_sr": 48000,
+    "epochs": 20,
+    "batch_size": 8,
+    "lr_audio": 5e-05,
+    "lr_head": 0.001
+  },
+  "per_class_f1": {
+    "Electronic": 0.6414,
+    "Experimental": 0.5714,
+    "Folk": 0.6574,
+    "Hip-Hop": 0.75,
+    "Instrumental": 0.6232,
+    "International": 0.7524,
+    "Pop": 0.4368,
+    "Rock": 0.6594
+  },
+  "checkpoint": "/home/anand_dev/STUDY/NU/spring26/CS5100_FAI/results/checkpoints/clap/clap_laion_20260314_132740.pt"
+}

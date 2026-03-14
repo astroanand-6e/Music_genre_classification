@@ -1,0 +1,27 @@
+{
+  "model": "ast",
+  "variant": "",
+  "mode": "finetune",
+  "timestamp": "2026-03-14T13:49:39.090413",
+  "test_accuracy": 0.6494,
+  "best_val_accuracy": 0.6586,
+  "config": {
+    "clip_secs": 10,
+    "target_sr": 16000,
+    "epochs": 20,
+    "batch_size": 8,
+    "lr_backbone": 1e-05,
+    "lr_head": 0.001
+  },
+  "per_class_f1": {
+    "Electronic": 0.6766,
+    "Experimental": 0.546,
+    "Folk": 0.7112,
+    "Hip-Hop": 0.7649,
+    "Instrumental": 0.6372,
+    "International": 0.7737,
+    "Pop": 0.4301,
+    "Rock": 0.6333
+  },
+  "checkpoint": "/home/anand_dev/STUDY/NU/spring26/CS5100_FAI/results/checkpoints/ast/ast_20260314_125930.pt"
+}

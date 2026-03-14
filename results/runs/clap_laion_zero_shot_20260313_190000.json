@@ -1,0 +1,15 @@
+{
+  "model": "clap",
+  "variant": "laion",
+  "mode": "zero_shot",
+  "timestamp": "2026-03-13T19:00:00",
+  "test_accuracy": 0.1251,
+  "best_val_accuracy": null,
+  "config": {
+    "clip_secs": 10,
+    "target_sr": 48000,
+    "method": "text_similarity"
+  },
+  "per_class_f1": {},
+  "note": "seeded \u2014 text-similarity zero-shot (near-random; linear probe not yet run)"
+}

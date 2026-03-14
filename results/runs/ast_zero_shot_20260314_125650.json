@@ -1,0 +1,22 @@
+{
+  "model": "ast",
+  "variant": "",
+  "mode": "zero_shot",
+  "timestamp": "2026-03-14T12:56:50.311417",
+  "test_accuracy": 0.5525,
+  "best_val_accuracy": null,
+  "config": {
+    "clip_secs": 10,
+    "target_sr": 16000
+  },
+  "per_class_f1": {
+    "Electronic": 0.5728,
+    "Experimental": 0.4513,
+    "Folk": 0.6053,
+    "Hip-Hop": 0.6632,
+    "Instrumental": 0.5242,
+    "International": 0.6667,
+    "Pop": 0.3789,
+    "Rock": 0.5585
+  }
+}

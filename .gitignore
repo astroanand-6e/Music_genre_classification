@@ -3,8 +3,9 @@ fma_metadata/
 fma_small/
 Final Project/
 
-# Results (generated, large checkpoints)
-results/
+# Results — track summaries and figures, ignore large checkpoints
+results/checkpoints/
+results/**/*.pt
 
 # IDE / editor
 .vscode/

@@ -1,0 +1,3 @@
+Model,Mode,Accuracy
+ast,zero_shot,55.25
+clap-laion,zero_shot,12.5
