@@ -1,0 +1,30 @@
+# Data (large, external)
+fma_metadata/
+fma_small/
+Final Project/
+
+# Results (generated, large checkpoints)
+results/
+
+# IDE / editor
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+*.npy
+*.pt
