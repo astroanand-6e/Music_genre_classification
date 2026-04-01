@@ -2,6 +2,8 @@
 fma_metadata/
 fma_small/
 Final Project/
+fma_medium
+plan
 
 # Results — track summaries and figures, ignore large checkpoints
 results/checkpoints/
@@ -22,6 +24,7 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+.claude/
 
 # Jupyter
 .ipynb_checkpoints/

@@ -9,6 +9,10 @@ Usage
     # Zero-shot comparison of all models
     python evaluate.py --model mert-95m --model mert-330m --model clap-laion --model ast --model musicldm
 
+    # Deterministic val/test windows + full-track test embeddings (averaged crops)
+    python evaluate.py --model ast --temporal_train random --temporal_eval deterministic \\
+        --test_multi_crop --dataset small
+
     # Evaluate fine-tuned checkpoints
     python evaluate.py \\
         --model mert-330m --checkpoint results/checkpoints/mert/mert_330m_20260314.pt \\
@@ -36,12 +40,16 @@ from data.data_utils import (
     load_fma_metadata, get_splits, get_label_maps,
     save_run_results, compute_per_class_f1,
     get_audio_path, load_waveform, figures_path, RESULTS_DIR,
+    fma_audio_dir,
+    segment_offset_for_mode, tiled_segment_offsets,
+    add_temporal_cli_args,
 )
 
 # __ CLI __
 
 def parse_args():
     p = argparse.ArgumentParser(description="Unified model evaluation")
+    add_temporal_cli_args(p)
     p.add_argument(
         "--model", action="append", required=True,
         help="Model key to evaluate: mert-95m, mert-330m, clap-laion, "
@@ -54,6 +62,10 @@ def parse_args():
     )
     p.add_argument("--clip_secs", type=float, default=10)
     p.add_argument("--batch_size", type=int, default=16)
+    p.add_argument(
+        "--dataset", choices=["small", "medium"], default="small",
+        help="FMA subset (audio tree via fma_audio_dir)",
+    )
     return p.parse_args()
 
 # __ Model registry __
@@ -69,7 +81,11 @@ MODEL_REGISTRY = {
 
 # __ Feature extractors (zero-shot) __
 
-def extract_mert(track_ids, labels, variant, clip_secs, device):
+def extract_mert(
+    track_ids, labels, variant, clip_secs, device, audio_dir,
+    split_tag: str, temporal_mode: str, test_multi_crop: bool,
+    hop_frac: float, max_segments: int,
+):
     from transformers import Wav2Vec2FeatureExtractor, AutoModel
     model_id = {"95m": "m-a-p/MERT-v1-95M", "330m": "m-a-p/MERT-v1-330M"}[variant]
     sr = 24000
@@ -79,24 +95,42 @@ def extract_mert(track_ids, labels, variant, clip_secs, device):
     model.eval()
     max_len = sr * int(clip_secs)
     feats, labs = [], []
+    multi = test_multi_crop and split_tag == "test"
     for tid, lab in tqdm(zip(track_ids, labels), total=len(track_ids), desc=f"MERT-{variant}"):
-        path = get_audio_path(tid)
+        path = get_audio_path(int(tid), audio_dir)
         try:
-            wav = load_waveform(path, sr, clip_secs)
-            if len(wav) < max_len:
-                wav = np.pad(wav, (0, max_len - len(wav)))
-            inp = processor(wav, sampling_rate=sr, return_tensors="pt",
-                            padding="max_length", max_length=max_len, truncation=True).to(device)
-            with torch.no_grad():
-                out = model(**inp, output_hidden_states=True)
-            feats.append(out.last_hidden_state.mean(dim=1).squeeze().cpu().numpy())
+            if multi:
+                offs = tiled_segment_offsets(path, clip_secs, hop_frac, max_segments)
+            else:
+                off = segment_offset_for_mode(
+                    path, tid, clip_secs, split_tag, temporal_mode,
+                )
+                offs = [off]
+            acc = None
+            for off in offs:
+                wav = load_waveform(path, sr, clip_secs, offset=off)
+                if len(wav) < max_len:
+                    wav = np.pad(wav, (0, max_len - len(wav)))
+                else:
+                    wav = wav[:max_len]
+                inp = processor(wav, sampling_rate=sr, return_tensors="pt",
+                                padding="max_length", max_length=max_len, truncation=True).to(device)
+                with torch.no_grad():
+                    out = model(**inp, output_hidden_states=True)
+                e = out.last_hidden_state.mean(dim=1).squeeze().cpu().numpy()
+                acc = e if acc is None else acc + e
+            feats.append(acc / len(offs))
         except Exception:
             feats.append(np.zeros(dim))
         labs.append(lab)
     return np.array(feats), np.array(labs)
 
 
-def extract_clap(track_ids, labels, variant, clip_secs, device):
+def extract_clap(
+    track_ids, labels, variant, clip_secs, device, audio_dir,
+    split_tag: str, temporal_mode: str, test_multi_crop: bool,
+    hop_frac: float, max_segments: int,
+):
     from transformers import ClapModel, ClapProcessor
     model_id = {"laion": "laion/clap-htsat-fused", "microsoft": "microsoft/msclap"}[variant]
     sr = 48000
@@ -105,24 +139,42 @@ def extract_clap(track_ids, labels, variant, clip_secs, device):
     model.eval()
     max_len = int(sr * clip_secs)
     feats, labs = [], []
+    multi = test_multi_crop and split_tag == "test"
     for tid, lab in tqdm(zip(track_ids, labels), total=len(track_ids), desc=f"CLAP-{variant}"):
-        path = get_audio_path(tid)
+        path = get_audio_path(int(tid), audio_dir)
         try:
-            wav = load_waveform(path, sr, clip_secs)
-            if len(wav) < max_len:
-                wav = np.pad(wav, (0, max_len - len(wav)))
-            with torch.no_grad():
-                inp = processor(audio=wav, sampling_rate=sr, return_tensors="pt").to(device)
-                out = model.get_audio_features(**inp)
-                out = out.pooler_output if hasattr(out, "pooler_output") else out
-            feats.append(out.squeeze().cpu().numpy())
+            if multi:
+                offs = tiled_segment_offsets(path, clip_secs, hop_frac, max_segments)
+            else:
+                off = segment_offset_for_mode(
+                    path, tid, clip_secs, split_tag, temporal_mode,
+                )
+                offs = [off]
+            acc = None
+            for off in offs:
+                wav = load_waveform(path, sr, clip_secs, offset=off)
+                if len(wav) < max_len:
+                    wav = np.pad(wav, (0, max_len - len(wav)))
+                else:
+                    wav = wav[:max_len]
+                with torch.no_grad():
+                    inp = processor(audios=wav, sampling_rate=sr, return_tensors="pt").to(device)
+                    out = model.get_audio_features(**inp)
+                    out = out.pooler_output if hasattr(out, "pooler_output") else out
+                e = out.squeeze().cpu().numpy()
+                acc = e if acc is None else acc + e
+            feats.append(acc / len(offs))
         except Exception:
             feats.append(np.zeros(512))
         labs.append(lab)
     return np.array(feats), np.array(labs)
 
 
-def extract_ast(track_ids, labels, clip_secs, device):
+def extract_ast(
+    track_ids, labels, clip_secs, device, audio_dir,
+    split_tag: str, temporal_mode: str, test_multi_crop: bool,
+    hop_frac: float, max_segments: int,
+):
     from transformers import ASTFeatureExtractor, ASTModel
     model_id = "MIT/ast-finetuned-audioset-10-10-0.4593"
     sr = 16000
@@ -131,58 +183,105 @@ def extract_ast(track_ids, labels, clip_secs, device):
     model.eval()
     max_len = int(sr * clip_secs)
     feats, labs = [], []
+    multi = test_multi_crop and split_tag == "test"
     for tid, lab in tqdm(zip(track_ids, labels), total=len(track_ids), desc="AST"):
-        path = get_audio_path(tid)
+        path = get_audio_path(int(tid), audio_dir)
         try:
-            wav = load_waveform(path, sr, clip_secs)
-            if len(wav) < max_len:
-                wav = np.pad(wav, (0, max_len - len(wav)))
-            inp = fe(wav, sampling_rate=sr, return_tensors="pt",
-                     padding="max_length", truncation=True).to(device)
-            with torch.no_grad():
-                out = model(**inp)
-            feats.append(out.last_hidden_state[:, :2, :].mean(dim=1).squeeze().cpu().numpy())
+            if multi:
+                offs = tiled_segment_offsets(path, clip_secs, hop_frac, max_segments)
+            else:
+                off = segment_offset_for_mode(
+                    path, tid, clip_secs, split_tag, temporal_mode,
+                )
+                offs = [off]
+            acc = None
+            for off in offs:
+                wav = load_waveform(path, sr, clip_secs, offset=off)
+                if len(wav) < max_len:
+                    wav = np.pad(wav, (0, max_len - len(wav)))
+                else:
+                    wav = wav[:max_len]
+                inp = fe(wav, sampling_rate=sr, return_tensors="pt",
+                         padding="max_length", truncation=True).to(device)
+                with torch.no_grad():
+                    out = model(**inp)
+                e = out.last_hidden_state[:, :2, :].mean(dim=1).squeeze().cpu().numpy()
+                acc = e if acc is None else acc + e
+            feats.append(acc / len(offs))
         except Exception:
             feats.append(np.zeros(768))
         labs.append(lab)
     return np.array(feats), np.array(labs)
 
 
-def extract_musicldm(track_ids, labels, clip_secs, device):
+def extract_musicldm(
+    track_ids, labels, clip_secs, device, audio_dir,
+    split_tag: str, temporal_mode: str, test_multi_crop: bool,
+    hop_frac: float, max_segments: int,
+):
     import librosa as _lr
     from diffusers import MusicLDMPipeline
 
     sr = 16000
+    n_fft, hop_l, n_mels = 1024, 160, 64
+    mel_frames = 1000
     pipe = MusicLDMPipeline.from_pretrained("ucsd-reach/musicldm", torch_dtype=torch.float32)
     vae = pipe.vae.to(device)
     vae.eval()
     del pipe.unet, pipe.text_encoder, pipe.tokenizer
 
     feats, labs = [], []
+    multi = test_multi_crop and split_tag == "test"
     for tid, lab in tqdm(zip(track_ids, labels), total=len(track_ids), desc="MusicLDM"):
-        path = get_audio_path(tid)
+        path = get_audio_path(int(tid), audio_dir)
         try:
-            wav = load_waveform(path, sr, clip_secs)
-            mel = _lr.feature.melspectrogram(y=wav, sr=sr, n_fft=1024, hop_length=160, n_mels=64)
-            log_mel = _lr.power_to_db(mel, ref=np.max)
-            log_mel = (log_mel - log_mel.min()) / (log_mel.max() - log_mel.min() + 1e-8) * 2 - 1
-            mel_t = torch.from_numpy(log_mel).float().unsqueeze(0).unsqueeze(0).to(device)
-            with torch.no_grad():
-                latent = vae.encode(mel_t).latent_dist.mean
-            pooled = nn.functional.adaptive_avg_pool2d(latent, (8, 16))
-            feats.append(pooled.flatten(1).squeeze(0).cpu().numpy())
+            if multi:
+                offs = tiled_segment_offsets(path, clip_secs, hop_frac, max_segments)
+            else:
+                off = segment_offset_for_mode(
+                    path, tid, clip_secs, split_tag, temporal_mode,
+                )
+                offs = [off]
+            acc = None
+            for off in offs:
+                wav = load_waveform(path, sr, clip_secs, offset=off)
+                max_samples = int(sr * clip_secs)
+                if len(wav) < max_samples:
+                    wav = np.pad(wav, (0, max_samples - len(wav)))
+                else:
+                    wav = wav[:max_samples]
+                mel = _lr.feature.melspectrogram(
+                    y=wav, sr=sr, n_fft=n_fft, hop_length=hop_l, n_mels=n_mels,
+                )
+                log_mel = _lr.power_to_db(mel, ref=np.max)
+                log_mel = (log_mel - log_mel.min()) / (log_mel.max() - log_mel.min() + 1e-8) * 2 - 1
+                t_ax = log_mel.shape[1]
+                if t_ax > mel_frames:
+                    log_mel = log_mel[:, :mel_frames]
+                elif t_ax < mel_frames:
+                    log_mel = np.pad(log_mel, ((0, 0), (0, mel_frames - t_ax)))
+                mel_t = torch.from_numpy(log_mel).float().unsqueeze(0).unsqueeze(0).to(device)
+                with torch.no_grad():
+                    latent = vae.encode(mel_t).latent_dist.mean
+                pooled = nn.functional.adaptive_avg_pool2d(latent, (8, 16))
+                e = pooled.flatten(1).squeeze(0).cpu().numpy()
+                acc = e if acc is None else acc + e
+            feats.append(acc / len(offs))
         except Exception:
             feats.append(np.zeros(512))
         labs.append(lab)
     return np.array(feats), np.array(labs)
 
 
-EXTRACTORS = {
-    "mert":     lambda tids, labs, var, cs, dev: extract_mert(tids, labs, var, cs, dev),
-    "clap":     lambda tids, labs, var, cs, dev: extract_clap(tids, labs, var, cs, dev),
-    "ast":      lambda tids, labs, var, cs, dev: extract_ast(tids, labs, cs, dev),
-    "musicldm": lambda tids, labs, var, cs, dev: extract_musicldm(tids, labs, cs, dev),
-}
+def _extract_kw(args, audio_dir, split_tag, temporal_mode):
+    return dict(
+        audio_dir=audio_dir,
+        split_tag=split_tag,
+        temporal_mode=temporal_mode,
+        test_multi_crop=args.test_multi_crop,
+        hop_frac=args.test_crop_hop_frac,
+        max_segments=args.test_max_segments,
+    )
 
 # __ Plotting helpers __
 
@@ -239,10 +338,11 @@ def main():
     # pad checkpoints list to match models
     checkpoints = list(args.checkpoint) + [""] * (len(args.model) - len(args.checkpoint))
 
-    df = load_fma_metadata()
+    df = load_fma_metadata(subset=args.dataset)
     label2id, id2label = get_label_maps(df)
     train_df, val_df, test_df = get_splits(df)
     genre_names = [id2label[i] for i in range(len(id2label))]
+    audio_dir = fma_audio_dir(args.dataset)
 
     comparison_rows = []
 
@@ -265,17 +365,48 @@ def main():
             print(f"  Skipping checkpoint load in unified evaluator.\n")
             continue
 
-        # zero-shot feature extraction
-        extractor = EXTRACTORS.get(family)
-        if extractor is None:
-            print(f"  No extractor for family {family}")
-            continue
-
         train_ids, train_labels = train_df.index.tolist(), train_df["label"].tolist()
         test_ids, test_labels = test_df.index.tolist(), test_df["label"].tolist()
 
-        X_train, y_train = extractor(train_ids, train_labels, variant, args.clip_secs, device)
-        X_test, y_test = extractor(test_ids, test_labels, variant, args.clip_secs, device)
+        if family == "mert":
+            X_train, y_train = extract_mert(
+                train_ids, train_labels, variant, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "train", args.temporal_train),
+            )
+            X_test, y_test = extract_mert(
+                test_ids, test_labels, variant, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "test", args.temporal_eval),
+            )
+        elif family == "clap":
+            X_train, y_train = extract_clap(
+                train_ids, train_labels, variant, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "train", args.temporal_train),
+            )
+            X_test, y_test = extract_clap(
+                test_ids, test_labels, variant, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "test", args.temporal_eval),
+            )
+        elif family == "ast":
+            X_train, y_train = extract_ast(
+                train_ids, train_labels, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "train", args.temporal_train),
+            )
+            X_test, y_test = extract_ast(
+                test_ids, test_labels, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "test", args.temporal_eval),
+            )
+        elif family == "musicldm":
+            X_train, y_train = extract_musicldm(
+                train_ids, train_labels, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "train", args.temporal_train),
+            )
+            X_test, y_test = extract_musicldm(
+                test_ids, test_labels, args.clip_secs, device,
+                **_extract_kw(args, audio_dir, "test", args.temporal_eval),
+            )
+        else:
+            print(f"  No extractor for family {family}")
+            continue
 
         print("  Training logistic regression...")
         clf = LogisticRegression(max_iter=1000, C=1.0, random_state=42, n_jobs=-1)
@@ -299,8 +430,15 @@ def main():
         save_run_results(
             model=family, variant=variant, mode="zero_shot",
             test_accuracy=acc,
-            config={"clip_secs": args.clip_secs, "target_sr": info["sr"]},
+            config={
+                "clip_secs": args.clip_secs, "target_sr": info["sr"],
+                "dataset": args.dataset,
+                "temporal_train": args.temporal_train,
+                "temporal_eval": args.temporal_eval,
+                "test_multi_crop": args.test_multi_crop,
+            },
             per_class_f1=f1s,
+            dataset=f"fma_{args.dataset}",
         )
 
     # __ Summary __
