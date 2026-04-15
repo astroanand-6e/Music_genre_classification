@@ -1,0 +1,2 @@
+run_id,epoch,train_loss,val_loss,val_acc,best_val_acc,lr_max
+20260414_222210,1,1.5501547784544527,1.2979628250002861,0.55,0.55,1e-06

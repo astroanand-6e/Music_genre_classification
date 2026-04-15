@@ -176,10 +176,18 @@ def resolve_audio_path(track_id, row: pd.Series, audio_dir: str = AUDIO_DIR) -> 
 
     For Bollywood tracks the path is stored in ``row["audio_path"]``.
     For FMA tracks it is derived from the numeric track_id.
+
+    Prefers a pre-converted .wav file (same path, .wav extension) over the
+    original .mp3 when it exists — avoids libmpg123 decoding errors and is
+    faster to load (no decompression overhead).
     """
     if pd.notna(row.get("audio_path")):
         return row["audio_path"]
-    return get_audio_path(int(track_id), audio_dir)
+    mp3_path = get_audio_path(int(track_id), audio_dir)
+    wav_path = mp3_path[:-4] + ".wav"
+    if os.path.exists(wav_path):
+        return wav_path
+    return mp3_path
 
 
 def load_waveform(
@@ -530,7 +538,9 @@ class FMADataset(Dataset):
         if pd.notna(explicit_path) if explicit_path is not None else False:
             path = explicit_path
         else:
-            path = get_audio_path(int(track_id), self.audio_dir)
+            mp3_path = get_audio_path(int(track_id), self.audio_dir)
+            wav_path = mp3_path[:-4] + ".wav"
+            path = wav_path if os.path.exists(wav_path) else mp3_path
 
         try:
             offset = segment_offset_for_mode(

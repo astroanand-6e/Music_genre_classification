@@ -4,18 +4,40 @@ fma_small/
 Final Project/
 fma_medium
 plan
+bollywood
+data/cifar-10-batches-py/
+data/cifar-10-python.tar.gz
+data/text_cache_*.json
+data/manifest_*.csv
+
+# Personal notes / class files
+INclassassignment.md
+INclassassignment.pdf
+OVERNIGHT_RUN.md
+commands.md
+hw3_results
+Screenshot*.png
+=*
 
 # Results — track summaries and figures, ignore large checkpoints
 results/checkpoints/
 results/**/*.pt
 results/runs
 results/figures/mert_330m_training_curves.png
+
 # Personal notes / reading notes
 notes/
+results/reports/build_project_report.py
+results/reports/progress_report.pdf
+results/reports/progress_report.py
+
+# Model weights (large)
+models/gemma/
 
 # IDE / editor
 .vscode/
 .idea/
+.claude/
 
 # Python
 __pycache__/
@@ -24,7 +46,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-.claude/
 
 # Jupyter
 .ipynb_checkpoints/
@@ -33,6 +54,10 @@ build/
 .DS_Store
 Thumbs.db
 
+# Secrets
+.env
+
 # Misc
 *.npy
 *.pt
+*.pth
