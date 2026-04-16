@@ -1,134 +1,105 @@
-# Music Genre Classification with Pre-trained Audio Models
+# Music Genre Classification with Pre-trained Audio Models and Multimodal Fusion
 
-**CS5100 Foundations of AI — Northeastern University, Spring 2026**
+**CS 5100: Foundations of Artificial Intelligence — Northeastern University, Spring 2026**
 
-Comparing discriminative (MERT, AST), multimodal (CLAP), and generative (MusicLDM-VAE) pre-trained audio representations for music genre classification on the FMA-Small dataset.
+**Author:** Anand Thakkar
+
+Systematic comparison of six pre-trained audio encoders for music genre classification, plus **CALM** (Conformer Audio-Language Model) — a multimodal architecture that fuses frozen audio and text representations via cross-modal attention, achieving **83.9% accuracy on FMA-Medium (16 genres)** with only 4M trainable parameters.
+
+## Results
+
+### FMA-Medium (16 genres)
+
+| Model | Type | Zero-shot | Fine-tuned |
+|-------|------|:---------:|:----------:|
+| **CALM** | Audio + Text | 0.78% | **83.90%** |
+| CLAP (Microsoft) | Audio-text contrastive | — | 74.78% |
+| CLAP (LAION) | Audio-text contrastive | 32.02% | 73.32% |
+| MERT-330M | Music SSL | 70.26% | 73.26% |
+| AST | Audio spectrogram | 67.08% | 71.72% |
+| MERT-95M | Music SSL | 67.74% | 70.92% |
+| MusicLDM-VAE | Generative encoder | — | 70.30% |
+| Conformer | Speech SSL | 60.84% | 65.63% |
+
+### FMA-Small (8 genres)
+
+| Model | Zero-shot | Fine-tuned |
+|-------|:---------:|:----------:|
+| **CALM** | — | **81.44%** |
+| MERT-330M | 62.41% | 66.06% |
+| AST | 55.25% | 64.94% |
+| CLAP (LAION) | 12.50% | 63.75% |
+| MERT-95M | 58.41% | 63.12% |
+| MusicLDM-VAE | — | 56.87% |
 
 ## Project Structure
 
 ```
 CS5100_FAI/
 ├── data/
-│   └── data_utils.py           # Shared: metadata, audio I/O, dataset, splits, result logging
+│   ├── data_utils.py              # Dataset, audio I/O, metadata, splits, logging
+│   ├── preprocess_audio.py        # MP3 → 16kHz mono WAV conversion
+│   ├── build_text_cache.py        # Text metadata caching for CALM
+│   ├── build_lyrics_cache.py      # Lyrics extraction via APIs
+│   └── build_bollywood_metadata.py
 │
 ├── models/
-│   ├── mert/finetune.py        # MERT-v1 (95M / 330M) — zero-shot & fine-tune
-│   ├── clap/finetune.py        # CLAP (LAION / Microsoft) — zero-shot & fine-tune
-│   ├── ast/finetune.py         # Audio Spectrogram Transformer — zero-shot & fine-tune
-│   └── musicldm/finetune.py    # MusicLDM VAE encoder — zero-shot & fine-tune
+│   ├── calm/finetune.py           # CALM — multimodal audio-language fusion
+│   ├── mert/finetune.py           # MERT-v1 (95M / 330M)
+│   ├── clap/finetune.py           # CLAP (LAION / Microsoft)
+│   ├── ast/finetune.py            # Audio Spectrogram Transformer
+│   ├── musicldm/finetune.py       # MusicLDM VAE encoder
+│   ├── conformer/finetune.py      # Wav2Vec2-Conformer
+│   └── lyrics/multimodal_fusion.py
 │
-├── evaluate.py                 # Unified multi-model comparison
-│
-├── notebooks/
-│   ├── progress_report.ipynb   # Living progress report (auto-loads results)
-│   └── baseline.ipynb          # Original MERT baseline notebook
+├── evaluate.py                    # Unified multi-model comparison
 │
 └── results/
-    ├── runs/                   # JSON summaries of every experiment
-    ├── figures/                # Training curves, confusion matrices, F1 charts
-    └── checkpoints/            # (gitignored) model checkpoint .pt files
+    ├── runs/                      # JSON summaries per experiment
+    ├── logs/finetune/             # Epoch-level training CSVs
+    ├── figures/                   # Training curves, confusion matrices
+    ├── reports/                   # Paper drafts and figures
+    └── checkpoints/               # Model .pt files (gitignored)
 ```
 
-## Dataset
+## Datasets
 
-**FMA-Small** — 8,000 tracks (30s each), 8 balanced genres:
-Electronic, Experimental, Folk, Hip-Hop, Instrumental, International, Pop, Rock.
+- **FMA-Small** — 8,000 tracks, 8 balanced genres
+- **FMA-Medium** — 25,000 tracks, 16 genres (imbalanced)
+- **Bollywood** — 153 tracks, 6 sub-genres (out-of-distribution eval)
 
-Download from [FMA](https://github.com/mdeff/fma) and place as:
-- `fma_small/` — audio files
-- `fma_metadata/` — `tracks.csv`, `genres.csv`
+Download FMA from [github.com/mdeff/fma](https://github.com/mdeff/fma) and place as `fma_small/`, `fma_medium/`, `fma_metadata/`.
 
 ## Models
 
-| Model | Type | HuggingFace ID | Sample Rate |
-|-------|------|---------------|-------------|
-| MERT-v1-95M | Music-specific discriminative | `m-a-p/MERT-v1-95M` | 24 kHz |
-| MERT-v1-330M | Music-specific discriminative | `m-a-p/MERT-v1-330M` | 24 kHz |
-| CLAP (LAION) | Audio-text contrastive | `laion/clap-htsat-fused` | 48 kHz |
-| CLAP (Microsoft) | Audio-text contrastive | `microsoft/msclap` | 48 kHz |
-| AST | General audio discriminative | `MIT/ast-finetuned-audioset-10-10-0.4593` | 16 kHz |
-| MusicLDM-VAE | Generative (music) | `ucsd-reach/musicldm` | 16 kHz |
+| Model | HuggingFace ID | Sample Rate |
+|-------|---------------|:-----------:|
+| MERT-v1-95M | `m-a-p/MERT-v1-95M` | 24 kHz |
+| MERT-v1-330M | `m-a-p/MERT-v1-330M` | 24 kHz |
+| CLAP (LAION) | `laion/clap-htsat-fused` | 48 kHz |
+| CLAP (Microsoft) | `microsoft/msclap` | 44.1 kHz |
+| AST | `MIT/ast-finetuned-audioset` | 16 kHz |
+| MusicLDM-VAE | `ucsd-reach/musicldm` | 16 kHz |
+| Conformer | `facebook/wav2vec2-conformer-rel-pos-large` | 16 kHz |
+| CALM | Gemma 4 Conformer + Gemma 4 Text Encoder | 16 kHz |
 
 ## Quick Start
 
-### Zero-shot linear probe
-
 ```bash
-# Single model
-python models/mert/finetune.py --mode zero_shot --model_size 95m
-python models/ast/finetune.py  --mode zero_shot
-python models/clap/finetune.py --mode zero_shot --variant laion
-python models/musicldm/finetune.py --mode zero_shot
+# Install dependencies
+pip install -r requirements.txt
 
-# Multi-model comparison
-python evaluate.py --model mert-95m --model mert-330m --model ast --model musicldm
+# Zero-shot
+python models/mert/finetune.py --mode zero_shot --model_size 330m
+
+# Fine-tune
+python models/mert/finetune.py --mode finetune --model_size 330m --epochs 15
+python models/calm/finetune.py --dataset fma_medium --epochs 22
+
+# Multi-model evaluation
+python evaluate.py --model mert-330m --model ast --model clap-laion
 ```
-
-### Fine-tuning
-
-```bash
-python models/mert/finetune.py     --mode finetune --model_size 330m --epochs 15
-python models/ast/finetune.py      --mode finetune --epochs 20
-python models/clap/finetune.py     --mode finetune --variant laion --epochs 20
-python models/musicldm/finetune.py --mode finetune --epochs 20
-```
-
-### Results
-
-Every run saves a structured JSON to `results/runs/`. Open `notebooks/progress_report.ipynb` and re-run the aggregation cell to see all results in a single comparison table and chart.
-
-Checkpoints save to `results/checkpoints/{model}/{model}_{variant}_{YYYYMMDD_HHMMSS}.pt`.
 
 ## Requirements
 
-```
-torch
-torchaudio
-transformers
-diffusers          # for MusicLDM
-accelerate
-librosa
-scikit-learn
-pandas
-numpy
-matplotlib
-seaborn
-tqdm
-```
-
-## Results
-
-### Overall Accuracy
-
-| Model | Zero-shot | Fine-tuned (head-only) | Fine-tuned (end-to-end) |
-|-------|:---------:|:----------------------:|:-----------------------:|
-| MERT-v1-95M | 58.41% | 57.54% | 63.12% |
-| MERT-v1-330M | 62.41% | — | **66.06%** ← best |
-| CLAP (LAION) | 12.50% | — | 63.75% |
-| AST | 55.25% | — | 64.94% |
-
-> MERT head-only fine-tune trained the classification head with the encoder frozen (100 epochs). End-to-end fine-tune updated all parameters jointly.
-
-### Per-class F1 (Fine-tuned, end-to-end)
-
-| Genre | MERT-330M | AST | CLAP LAION | MERT-95M (head-only) |
-|-------|:---------:|:---:|:----------:|:--------------------:|
-| Electronic | **0.722** | 0.677 | 0.641 | 0.590 |
-| Experimental | 0.563 | 0.546 | **0.571** | 0.507 |
-| Folk | 0.672 | **0.711** | 0.657 | 0.644 |
-| Hip-Hop | **0.802** | 0.765 | 0.750 | 0.690 |
-| Instrumental | 0.611 | **0.637** | 0.623 | 0.595 |
-| International | **0.801** | 0.774 | 0.752 | 0.587 |
-| Pop | **0.451** | 0.430 | 0.437 | 0.302 |
-| Rock | **0.667** | 0.633 | 0.659 | 0.638 |
-
-### Key Observations
-
-- **MERT-330M fine-tuned (66.06%)** is the best result overall — music-domain pre-training at scale wins both zero-shot and fine-tuned settings.
-- **AST** (64.94%) and **CLAP LAION** (63.75%) are competitive after fine-tuning despite very different pre-training objectives.
-- **CLAP LAION** shows the largest gain (+51.3 pp) from its near-random zero-shot — its audio encoder requires supervised fine-tuning to be useful for closed-set classification.
-- **MERT-95M head-only** (57.54%) actually dropped below zero-shot (58.41%), confirming frozen MERT representations are best used with a simple logistic regression probe, not a trained MLP head.
-- **Pop** is the hardest genre for all models (F1 ≤ 0.45), due to high acoustic overlap with other genres.
-- **Experimental** is consistently the second-hardest (F1 ≈ 0.51–0.57), consistent with its loose genre definition.
-
-Full run JSONs are in `results/runs/` and figures in `results/figures/` and `results/evaluations/`.
+See `requirements.txt`. Core dependencies: `torch`, `torchaudio`, `transformers`, `diffusers`, `librosa`, `scikit-learn`, `pandas`, `matplotlib`.
